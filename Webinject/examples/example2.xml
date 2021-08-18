@@ -1,0 +1,60 @@
+<testcases repeat="1">
+
+<case
+	id="1"
+	description1="the portal page"
+	method="get"
+	url="https://my.page"
+	logrequest="no"
+	logresponse="no"
+/>
+
+<case
+	id="2"
+	description1="api page"
+	method="get"
+	url="https://api.my.page"
+	logrequest="no"
+	logresponse="no"
+	max_redirect="7"
+/>
+
+<case
+	id="3"
+	description1="do a post"
+	method="post"
+	url="{PREVIOUSURL}"
+	postbody="user=username"
+	logrequest="no"
+	logresponse="no"
+	max_redirect="7"
+/>
+
+<case
+	id="4"
+	description1="log in"
+	method="post"
+	url="{PREVIOUSURL}"
+	postbody="acronym=a1&email=a2@site.ee&username=a3&password=a4"
+	logrequest="no"
+	logresponse="no"
+	verifynegative="The password you entered was incorrect"
+	max_redirect="7"
+	parseresponse='form action="|" method|decode'
+	parseresponse1='RelayState" value="|"|decode'
+	parseresponse2='SAMLResponse" value="|"|escape'
+/>
+
+<case
+	id="5"
+	description1="now really log in"
+	method="post"
+	url="{PARSEDRESULT}"
+	postbody="RelayState={PARSEDRESULT1}&SAMLResponse={PARSEDRESULT2}"
+	logrequest="no"
+	logresponse="no"
+	verifynegative="The password you entered was incorrect"
+	max_redirect="7"
+/>
+
+</testcases>

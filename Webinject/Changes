@@ -7,6 +7,13 @@ For information and documentation, visit the website at http://www.webinject.org
 ---------------------------------
 Release History:
 
+Unrelased:
+    - Added {PREVIOUSURL} to be able to use the previous target url (even after
+      redirection) in the next step
+    - Target url after redirection added to log
+    - basicauth param can be set per case
+    - max_redirect and timeout can be set per case
+
 Version 1.96 - Thu 10 Oct 2019 09:16:08 AM CEST
     - migrate to Net::SSLeay and IO::Socket::SSL
 

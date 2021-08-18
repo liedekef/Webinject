@@ -940,6 +940,16 @@ sub _http_defaults {
             $request->header( $1 => $2 );   # using HTTP::Headers Class
         }
     }
+    if ($case->{basicauth}) { # override httpauth can be done
+	$case->{basicauth} =~ m~(.*):(.*)~;
+	$request->authorization_basic($1, $2);
+    }
+    if ($case->{timeout}) { # override timeout can be done
+        $useragent->timeout("$case->{timeout}");
+    }
+    if ($case->{max_redirect}) { # override redir can be done
+        $useragent->max_redirect("$case->{max_redirect}");
+    }
 
     # print $self->{'request'}->as_string; print "\n\n";
 
@@ -948,7 +958,8 @@ sub _http_defaults {
     my $endtimer          = time();
     my $latency           = ( int( 1000 * ( $endtimer - $starttimer ) ) / 1000 ); # elapsed time rounded to thousandths
     # print $response->as_string; print "\n\n";
-
+    $useragent->timeout($self->{'config'}->{'timeout'}); # reset timeout
+    $useragent->max_redirect($self->{'config'}->{'max_redirect'}); # reset max_redirect
     return($latency,$request,$response);
 }
 
@@ -1338,6 +1349,8 @@ sub _parseresponse {
     my ( $resptoparse, @parseargs );
     my ( $leftboundary, $rightboundary, $escape );
 
+    $self->{'parsedresult'}->{'previousurl'} = $response->base;
+
     for my $type ( qw/parseresponse parseresponse1 parseresponse2 parseresponse3 parseresponse4 parseresponse5/ ) {
 
         next unless $case->{$type};
@@ -1625,6 +1638,7 @@ sub _convertbackxml {
 sub _convertbackxmlresult {
     my ( $self, $string) = @_;
     return unless defined $string;
+    $string =~ s~\{PREVIOUSURL\}~$self->{'parsedresult'}->{'previousurl'}~gmx if defined $self->{'parsedresult'}->{'previousurl'};
     $string =~ s~\{PARSEDRESULT\}~$self->{'parsedresult'}->{'parseresponse'}~gmx if defined $self->{'parsedresult'}->{'parseresponse'};
     for my $x (1..5) {
         $string =~ s~\{PARSEDRESULT$x\}~$self->{'parsedresult'}->{"parseresponse$x"}~gmx if defined $self->{'parsedresult'}->{"parseresponse$x"};
@@ -1662,6 +1676,7 @@ sub _httplog {
 
     # http response - log setting per test case
     if($case->{'logresponse'} && $case->{'logresponse'} =~ /yes/mxi ) {
+        $output .= "Target URL: ".$response->base."\n";
         $output .= $response->as_string."\n\n";
     }
 
@@ -2140,3 +2155,4 @@ This library is free software; you can redistribute it under the GPL2 license.
 
 1;
 __END__
+
