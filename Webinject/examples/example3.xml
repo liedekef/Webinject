@@ -1,0 +1,97 @@
+ <testcases repeat="1">
+
+<testvar varname="URL">http://app.domain.com</testvar>
+<testvar varname="LOGIN">user</testvar>
+<testvar varname="PASSWD">pass</testvar>
+<testvar varname="NUMBER">xxxxxxxx</testvar>
+<testvar varname="ACCOUNT">xxxxxx</testvar>
+<testvar varname="SERVICE">xxxxx</testvar>
+<testvar varname="PASSCODE">xxxxxx</testvar>
+
+
+<case
+    id="1"
+    description1="App Login"
+    label="App_Login"
+    method="post"
+    url="${URL}/cas/login?service=${URL}/app"
+    postbody="username=${LOGIN}&password=${PASSWD}&service=${URL}/app"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    parseresponse='ticket=|"'
+/>
+
+<case
+    id="2"
+    label="App_Home_Page"
+    description1="App Home Page"
+    method="get"
+    url="${URL}/app/?ticket={PARSEDRESULT}"
+    logrequest="no"
+    logresponse="no"
+    verifypositive="Search"
+/>
+
+<case
+    id="3"
+    label="App_Contact_Search"
+    description1="App Contact Search"
+    method="post"
+    url="${URL}/app/ws/person/query"
+    postbody='{"type":"STANDARD", "resultList":[],  "totalResults":0}'
+    addheader="Content-Type: application/json"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    verifypositive="${NUMBER}"
+/>
+
+<case
+    id="4"
+    label="App_Contact_Details"
+    description1="App Contact Details"
+    method="post"
+    url="${URL}/app/contact/load.initialize?action=VIEW&cid=14831"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    verifypositive="${ACCOUNT}"
+/>
+
+<case
+    id="5"
+    label="App_Contact_Services"
+    description1="App Contact Services"
+    method="get"
+    url="${URL}/app/meeting/listContactServices.initialize"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    verifypositive="${SERVICE}"
+/>
+
+<case
+    id="6"
+    label="App_Details"
+    description1="App Details"
+    method="post"
+    url="${URL}/app/meeting/listContactServices.process"
+    postbody="_CHECKBOXES=&meetingType=xxxxx"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    verifypositive="${PASSCODE}"
+/>
+<case
+    id="7"
+    label="App_Logout"
+    description1="App Logout"
+    method="get"
+    url="${URL}/cas/logout?service=${URL}/app"
+    logrequest="no"
+    logresponse="no"
+    sleep="1"
+    verifypositive="Login"
+/>
+</testcases>  
