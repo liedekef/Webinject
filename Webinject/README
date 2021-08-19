@@ -99,6 +99,27 @@ METHODS
  
 TEST CASES
   Parameters
+    id
+        (required) A unique number per case, starting at 1
+
+    method
+        The web method (GET, POST, PUT, DELETE)
+
+    url
+        The url to test
+
+    label
+        a label for this test
+
+    warning
+        When test takes longer than this amount of seconds, return warn in
+        nagios
+
+    critical
+        When test takes longer than this amount of seconds, return crit in
+        nagios
+
+
     addcookie
         When added to a test case, this adds a cookie to the cookie jar
         prior to the test case request being sent (i.e. the test case this
