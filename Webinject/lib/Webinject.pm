@@ -1379,7 +1379,7 @@ sub _parseresponse {
             }
         }  elsif (!defined $case->{'parsewarning'} or $case->{'parsewarning'}) {
 	    # ah, no match ... store the failed info
-            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary in <br /><code><pre>".encode_entities($resptoparse)."</pre></code>"};
+            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary"};
             $self->_out("Failed Parseresult, cannot find $leftboundary(*)$rightboundary\n");
             $case->{'iswarning'} = 1;
         }
