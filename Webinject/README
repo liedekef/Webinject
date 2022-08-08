@@ -17,9 +17,10 @@ DESCRIPTION
     and may also be used for monitoring system response times.
  
 CONSTRUCTOR
-  new ( [ARGS] )
-    Creates an "Webinject" object.
+    new ( [ARGS] )
+        Creates an "Webinject" object.
  
+ CONSTRUCTOR ARGS (or: GLOBAL SETTINGS in config.xml file)
     reporttype
         possible values are 'standard', 'nagios', 'nagios2', 'mrtg' or
         'external:'
@@ -205,6 +206,15 @@ TEST CASES
 
     max_redirect
         Override the default max_redirect setting just for this case
+
+    logrequest
+        Log the URL being requested in a logfile (name of the xml-file + "_outputhttp.log")
+        Values: yes/no (default: no)
+
+    logresponse
+        Log the URL request output in a logfile (name of the xml-file + "_outputhttp.log")
+        Values: yes/no (default: no)
+
 
   Replacement strings
     {PARSERESPONSE}
