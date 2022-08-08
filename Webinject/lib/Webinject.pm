@@ -2030,10 +2030,15 @@ sub _usage {
                 [-o|--output output_location]
                 [-n|--no-output]
                 [-t|--timeout]
-                [-T|--globaltimeout]
-                [-r|--report-type]
+                [-r|--report-type standard|nagios|nagios2|mrtg|external:]
                 [-s key=value]
-                [testcase_file [XPath]]
+                [/path/to/testcase_file [XPath]]
+
+      The optional '-c' param specifies a path to a base xml file that sets defaults
+      The optional '-n' param prevents console output (usefull in plugins/scripts)
+      The optional '-t' param sets the basic timeout (param globaltimeout in the base xml file, can be overriden per testcase)
+      The optional '-r' param sets the report type 
+
       $0 --version|-v
 EOB
     exit 3;
