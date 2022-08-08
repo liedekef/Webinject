@@ -1362,26 +1362,26 @@ sub _parseresponse {
         $escape        = $parseargs[2];
 
         $resptoparse = $response->as_string;
-        ## no critic
-        if ( $resptoparse =~ m~$leftboundary(.*?)$rightboundary~s ) {
+
+	if ( $resptoparse =~ m~$leftboundary(.*?)$rightboundary~s ) {
+	    # we found what we were looking for, now let's store it
             $self->{'parsedresult'}->{$type} = $1;
-        }
-        ## use critic
-        elsif(!defined $case->{'parsewarning'} or $case->{'parsewarning'}) {
-            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary" };
+	    
+            if ($escape) {
+                if ( $escape eq 'escape' ) {
+                    $self->{'parsedresult'}->{$type} =
+                      $self->_url_escape( $self->{'parsedresult'}->{$type} );
+                }
+                if ( $escape eq 'decode' ) {
+                    $self->{'parsedresult'}->{$type} =
+                      decode_entities( $self->{'parsedresult'}->{$type} );
+                }
+            }
+        }  elsif (!defined $case->{'parsewarning'} or $case->{'parsewarning'}) {
+	    # ah, no match ... store the failed info
+            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary in <br /><code><pre>".encode_entities($resptoparse)."</pre></code>"};
             $self->_out("Failed Parseresult, cannot find $leftboundary(*)$rightboundary\n");
             $case->{'iswarning'} = 1;
-        }
-
-        if ($escape) {
-            if ( $escape eq 'escape' ) {
-                $self->{'parsedresult'}->{$type} =
-                  $self->_url_escape( $self->{'parsedresult'}->{$type} );
-            }
-            if ( $escape eq 'decode' ) {
-                $self->{'parsedresult'}->{$type} =
-                  decode_entities( $self->{'parsedresult'}->{$type} );
-            }
         }
 
         #print "\n\nParsed String: $self->{'parsedresult'}->{$type}\n\n";
