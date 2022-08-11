@@ -1,5 +1,4 @@
 package Webinject;
-
 #    Copyright 2010-2012 Sven Nierlein (nierlein@cpan.org)
 #    Copyright 2004-2006 Corey Goldberg (corey@goldb.org)
 #
@@ -27,16 +26,16 @@ use HTTP::Cookies;
 use XML::Simple;
 use Time::HiRes 'time', 'sleep';
 use Getopt::Long;
-use Net::SSLeay;                # for SSL/HTTPS
-use IO::Socket::SSL;            # for SSL/HTTPS
+use Crypt::SSLeay;              # for SSL/HTTPS (you may comment this out if you don't need it)
 use XML::Parser;                # for web services verification (you may comment this out if aren't doing XML verifications for web services)
 use Error qw(:try);             # for web services verification (you may comment this out if aren't doing XML verifications for web services)
 use Data::Dumper;               # dump hashes for debugging
 use File::Temp qw/ tempfile /;  # create temp files
 use File::Basename;
 use File::Spec;
+use MIME::Base64;
 
-our $VERSION = '1.96_2';
+our $VERSION = '1.94';
 
 =head1 NAME
 
@@ -83,10 +82,6 @@ execute all tests regardless of the previous case.
 =item timeout
 
 Default timeout is 180seconds. Timeout starts again for every testcase.
-
-=item globaltimeout
-
-Default timeout is 180seconds. Time allowed to run all tests of file.
 
 =item useragent
 
@@ -148,13 +143,13 @@ Defines the path to your gnuplot binary.
 =item postbodybasedir
 
 Path to a directory from which all relative test case postbody directives
-are based.
+are based.  
 
-When test cases include a "postbody" directive with a "file=>..."
-value, and that value is a relative location, Webinject will prepend this
+When test cases include a "postbody" directive with a "file=>..." 
+value, and that value is a relative location, Webinject will prepend this 
 directory path.
 
-If not supplied, the directory containing the current test case file is
+If not supplied, the directory containing the current test case file is 
 prepended to any relative "file=>" values.
 
 =back
@@ -233,7 +228,7 @@ sub engine {
                                   // File::Spec->rel2abs(dirname($currentcasefile))
                                   // File::Spec->rel2abs(dirname($0))
                                   // File::Spec->rel2abs(dirname(__FILE__));
-
+        
         my $resultfile = {
             'name'  => $currentcasefile,
             'cases' => [],
@@ -366,9 +361,9 @@ sub _run_test_case {
     # replace host with realserverip in url and add http host header to useragent
     if($self->{'config'}->{'realserverip'})
     {
-        my($uri)=URI->new($case->{url});
-        my($host)=$uri->host();
-        $useragent->default_header('Host' => $uri->host());
+	my($uri)=URI->new($case->{url});
+	my($host)=$uri->host();
+	$useragent->default_header('Host' => $uri->host());
         $case->{url}=~s/\Q$host\E/$self->{'config'}->{'realserverip'}/mx;
     }
 
@@ -401,11 +396,11 @@ sub _run_test_case {
             elsif(lc $case->{method} eq "delete") {
                 ($latency,$request,$response) = $self->_httpdelete($useragent, $case);
             }
-            elsif((lc $case->{method} eq "post") or (lc $case->{method} eq "put")) {
+            elsif(lc $case->{method} eq "post") {
                 ($latency,$request,$response) = $self->_httppost($useragent, $case);
             }
             else {
-                $self->_usage('ERROR: bad HTTP Request Method Type, you must use "get", "delete", "put" or "post"');
+                $self->_usage('ERROR: bad HTTP Request Method Type, you must use "get", "delete" or "post"');
             }
         }
         else {
@@ -642,6 +637,11 @@ sub _get_useragent {
 
     # add proxy support if it is set in config.xml
     if( $self->{'config'}->{'proxy'} ) {
+        # try IO::Socket::SSL first
+        eval {
+            require IO::Socket::SSL;
+            IO::Socket::SSL->import();
+        };
         my $proxy = $self->{'config'}->{'proxy'};
         $proxy    =~ s/^http(s|):\/\///mx;
         # http just works
@@ -653,12 +653,24 @@ sub _get_useragent {
             $proxyuser = $1;
             $proxypass = $2;
         }
-        $ENV{PERL_NET_HTTPS_SSL_SOCKET_CLASS} = "IO::Socket::SSL";
-        if($proxypass) {
-            $proxy = $proxyuser.':'.$proxypass.'@'.$proxy;
+        # ssl depends on which class we have
+        if($INC{'IO/Socket/SSL.pm'}) {
+            $ENV{PERL_NET_HTTPS_SSL_SOCKET_CLASS} = "IO::Socket::SSL";
+            if($proxypass) {
+                $proxy = $proxyuser.':'.$proxypass.'@'.$proxy;
+            }
+            my $con_proxy = 'connect://'.$proxy;
+            $useragent->proxy('https', $con_proxy);
+        } else {
+            # ssl proxy only works this way, see http://community.activestate.com/forum-topic/lwp-https-requests-proxy
+            $ENV{PERL_NET_HTTPS_SSL_SOCKET_CLASS}   = "Net::SSL";
+            $ENV{PERL_LWP_SSL_VERIFY_HOSTNAME}      = 0;
+            $ENV{HTTPS_PROXY}                       = $proxy;
+            $ENV{HTTPS_PROXY_USERNAME}              = $proxyuser;
+            $ENV{HTTPS_PROXY_PASSWORD}              = $proxypass;
+            # env proxy breaks the ssl proxy above
+            #$useragent->env_proxy();
         }
-        my $con_proxy = 'connect://'.$proxy;
-        $useragent->proxy('https', $con_proxy);
     }
 
     # don't follow redirects unless set by config
@@ -846,12 +858,51 @@ Min Response Time: $self->{'result'}->{'minresponse'} seconds <br />
 
 ################################################################################
 # write summary and closing tags for XML results file
+sub _write_result_xml_stdout {
+    my $self    = shift;
+
+    print "<results>\n\n";
+
+    for my $file (@{$self->{'result'}->{'files'}}) {
+        print "    <testcases file=\"".$file->{'name'}."\">\n\n";
+        for my $case (@{$file->{'cases'}}) {
+            print "        <testcase id=\"".$case->{'id'}."\">\n";
+            for my $message (@{$case->{'messages'}}) {
+                next unless defined $message->{'key'};
+                print "            <".$message->{'key'}.">".$message->{'value'}."</".$message->{'key'}.">\n";
+            }
+            print "        </testcase>\n\n";
+        }
+        print "    </testcases>\n";
+    }
+
+    print qq|
+    <test-summary>
+        <start-time>$self->{'config'}->{'currentdatetime'}</start-time>
+        <total-run-time>$self->{'result'}->{'totalruntime'}</total-run-time>
+        <test-cases-run>$self->{'result'}->{'totalruncount'}</test-cases-run>
+        <test-cases-passed>$self->{'result'}->{'totalcasespassedcount'}</test-cases-passed>
+        <test-cases-failed>$self->{'result'}->{'totalcasesfailedcount'}</test-cases-failed>
+        <verifications-passed>$self->{'result'}->{'totalpassedcount'}</verifications-passed>
+        <verifications-failed>$self->{'result'}->{'totalfailedcount'}</verifications-failed>
+        <average-response-time>$self->{'result'}->{'avgresponse'}</average-response-time>
+        <max-response-time>$self->{'result'}->{'maxresponse'}</max-response-time>
+        <min-response-time>$self->{'result'}->{'minresponse'}</min-response-time>
+    </test-summary>
+
+</results>
+|;
+    return;
+}
+
+################################################################################
+# write summary and closing tags for XML results file
 sub _write_result_xml {
     my $self    = shift;
 
     my $file = $self->{'config'}->{'output_dir'}."results.xml";
     open( my $resultsxml, ">", $file )
-      or $self->_usage("ERROR: Failed to write ".$file.": ".$!);
+	    or $self->_usage("ERROR: Failed to write ".$file.": ".$!);
 
     print $resultsxml "<results>\n\n";
 
@@ -884,7 +935,9 @@ sub _write_result_xml {
 
 </results>
 |;
-    close($resultsxml);
+    if($self->{'config'}->{'reporttype'} !~ /^stdout/mx) {
+	    close($resultsxml);
+    }
     return;
 }
 
@@ -951,7 +1004,8 @@ sub _http_defaults {
         $useragent->max_redirect("$case->{max_redirect}");
     }
 
-    # print $self->{'request'}->as_string; print "\n\n";
+    #print $self->{'request'}->as_string; print "\n\n";
+    #print $request->as_string; print "\n\n";
 
     my $starttimer        = time();
     my $response          = $useragent->request($request);
@@ -1004,7 +1058,7 @@ sub _httppost {
         elsif($case->{posttype} =~ m~multipart/form\-data~mx) {
             return $self->_httppost_form_data($useragent, $case);
         }
-        elsif(   ($case->{posttype} =~ m~text|application/xml~mx)
+        elsif(   ($case->{posttype} =~ m~text/xml~mx)
               or ($case->{posttype} =~ m~application/soap\+xml~mx)
              )
         {
@@ -1052,18 +1106,17 @@ sub _httppost_xml {
     if (!(File::Spec->file_name_is_absolute($postbodyfile)) && length $case->{'testdir'}) {
         $postbodyfile = File::Spec->rel2abs($postbodyfile, $case->{'testdir'});
     }
-    open( my $xmlbody, "<", $postbodyfile )
+    open( my $xmlbody, "<", $postbodyfile ) 
       or $self->_usage("ERROR: Failed to open text/xml file $1 (resolved to $postbodyfile): $!");    # open file handle
-
+      
     my @xmlbody = <$xmlbody>;    # read the file into an array
     close($xmlbody);
 
     # Get the XML input file to use PARSEDRESULT and substitute the contents
     my $content = $self->_convertbackxmlresult(join( " ", @xmlbody ));
-    my $METHOD = uc($case->{method});
 
-    $self->_out("$METHOD Request: ".$case->{url}."\n");
-    $request = new HTTP::Request( $METHOD, $case->{url} );
+    $self->_out("POST Request: ".$case->{url}."\n");
+    $request = new HTTP::Request( 'POST', $case->{url} );
     $request->content_type($case->{posttype});
     $request->content( $content );    # load the contents of the file into the request body
 
@@ -1350,6 +1403,11 @@ sub _parseresponse {
     my ( $leftboundary, $rightboundary, $escape );
 
     $self->{'parsedresult'}->{'previousurl'} = $response->base;
+    my($scheme, $authority, $path, $query, $fragment) =
+    $response->base =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|;
+    $self->{'parsedresult'}->{'previousbaseurl'} = $scheme.'://'.$authority;
+    $self->{'parsedresult'}->{'previoushost'} = $authority;
+    $self->{'parsedresult'}->{'previousscheme'} = $scheme;
 
     for my $type ( qw/parseresponse parseresponse1 parseresponse2 parseresponse3 parseresponse4 parseresponse5/ ) {
 
@@ -1362,29 +1420,32 @@ sub _parseresponse {
         $escape        = $parseargs[2];
 
         $resptoparse = $response->as_string;
-
-	if ( $resptoparse =~ m~$leftboundary(.*?)$rightboundary~s ) {
-	    # we found what we were looking for, now let's store it
+        ## no critic
+        if ( $resptoparse =~ m~$leftboundary(.*?)$rightboundary~s ) {
             $self->{'parsedresult'}->{$type} = $1;
-	    
-            if ($escape) {
-                if ( $escape eq 'escape' ) {
-                    $self->{'parsedresult'}->{$type} =
-                      $self->_url_escape( $self->{'parsedresult'}->{$type} );
-                }
-                if ( $escape eq 'decode' ) {
-                    $self->{'parsedresult'}->{$type} =
-                      decode_entities( $self->{'parsedresult'}->{$type} );
-                }
-            }
-        }  elsif (!defined $case->{'parsewarning'} or $case->{'parsewarning'}) {
-	    # ah, no match ... store the failed info
-            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary"};
+	    if ($escape) {
+		    if ( $escape eq 'escape' ) {
+			    $self->{'parsedresult'}->{$type} =
+			    $self->_url_escape( $self->{'parsedresult'}->{$type} );
+		    }
+		    if ( $escape eq 'decode' ) {
+			    $self->{'parsedresult'}->{$type} =
+			    decode_entities( $self->{'parsedresult'}->{$type} );
+		    }
+		    if ( $escape eq 'decode+escape' ) {
+			    $self->{'parsedresult'}->{$type} =
+			    $self->_url_escape( decode_entities( $self->{'parsedresult'}->{$type} ));
+		    }
+	    }
+        }
+        ## use critic
+        elsif(!defined $case->{'parsewarning'} or $case->{'parsewarning'}) {
+            push @{$case->{'messages'}}, {'key' => $type.'-success', 'value' => 'false', 'html' => "<span class=\"fail\">Failed Parseresult, cannot find</span> $leftboundary(.*?)$rightboundary" };
             $self->_out("Failed Parseresult, cannot find $leftboundary(*)$rightboundary\n");
             $case->{'iswarning'} = 1;
         }
 
-        #print "\n\nParsed String: $self->{'parsedresult'}->{$type}\n\n";
+	#print "\n\nParsed String: $self->{'parsedresult'}->{$type}\n\n";
     }
     return;
 }
@@ -1639,6 +1700,9 @@ sub _convertbackxmlresult {
     my ( $self, $string) = @_;
     return unless defined $string;
     $string =~ s~\{PREVIOUSURL\}~$self->{'parsedresult'}->{'previousurl'}~gmx if defined $self->{'parsedresult'}->{'previousurl'};
+    $string =~ s~\{PREVIOUSBASEURL\}~$self->{'parsedresult'}->{'previousbaseurl'}~gmx if defined $self->{'parsedresult'}->{'previousbaseurl'};
+    $string =~ s~\{PREVIOUSHOST\}~$self->{'parsedresult'}->{'previoushost'}~gmx if defined $self->{'parsedresult'}->{'previoushost'};
+    $string =~ s~\{PREVIOUSSCHEME\}~$self->{'parsedresult'}->{'previousscheme'}~gmx if defined $self->{'parsedresult'}->{'previousscheme'};
     $string =~ s~\{PARSEDRESULT\}~$self->{'parsedresult'}->{'parseresponse'}~gmx if defined $self->{'parsedresult'}->{'parseresponse'};
     for my $x (1..5) {
         $string =~ s~\{PARSEDRESULT$x\}~$self->{'parsedresult'}->{"parseresponse$x"}~gmx if defined $self->{'parsedresult'}->{"parseresponse$x"};
@@ -1669,27 +1733,41 @@ sub _httplog {
     my $case        = shift;
     my $output      = '';
 
+    my $request_logged = 0;
+    my $response_logged = 0;
     # http request - log setting per test case
     if($case->{'logrequest'} && $case->{'logrequest'} =~ /yes/mxi ) {
+	$output .= "Case ID: ".$case->{'id'}."\n";
         $output .= $request->as_string."\n\n";
+	$request_logged = 1;
     }
 
     # http response - log setting per test case
     if($case->{'logresponse'} && $case->{'logresponse'} =~ /yes/mxi ) {
         $output .= "Target URL: ".$response->base."\n";
         $output .= $response->as_string."\n\n";
+	$response_logged = 1;
     }
 
     # global http log setting
     if($self->{'config'}->{'globalhttplog'} && $self->{'config'}->{'globalhttplog'} =~ /yes/mxi ) {
-        $output .= $request->as_string."\n\n";
-        $output .= $response->as_string."\n\n";
+	if (!$request_logged) {
+		$output .= $request->as_string."\n\n";
+	}
+	if (!$response_logged) {
+		$output .= $response->as_string."\n\n";
+	}
     }
 
     # global http log setting - onfail mode
     if($self->{'config'}->{'globalhttplog'} && $self->{'config'}->{'globalhttplog'} =~ /onfail/mxi && $case->{'iscritical'}) {
-        $output .= $request->as_string."\n\n";
-        $output .= $response->as_string."\n\n";
+	$output .= "Case ID: ".$case->{'id'}."\n";
+	if (!$request_logged) {
+		$output .= $request->as_string."\n\n";
+	}
+	if (!$response_logged) {
+		$output .= $response->as_string."\n\n";
+	}
     }
 
     if($output ne '') {
@@ -1804,12 +1882,15 @@ sub _finaltasks {
         #write summary and closing tags for XML results file
         $self->_write_result_xml();
     }
+    if ($self->{'config'}->{'reporttype'} eq 'stdout') {
+        $self->_write_result_xml_stdout();
+    }
 
     # write summary and closing tags for STDOUT
     $self->_writefinalstdout();
 
     #plugin modes
-    if($self->{'config'}->{'reporttype'} ne 'standard') {
+    if($self->{'config'}->{'reporttype'} ne 'standard' && $self->{'config'}->{'reporttype'} ne 'stdout') {
         # return value is set which corresponds to a monitoring program
         # Nagios plugin compatibility
         if($self->{'config'}->{'reporttype'} =~ /^nagios/mx) {
@@ -1981,7 +2062,6 @@ sub _getoptions {
         'n|no-output'     => \$self->{'config'}->{'nooutput'},
         'r|report-type=s' => \$self->{'config'}->{'reporttype'},
         't|timeout=i'     => \$self->{'config'}->{'timeout'},
-        'T|globaltimeout=i'=> \$self->{'config'}->{'globaltimeout'},
         's=s'             => \@sets,
     );
     if(!$opt_rc or $opt_help) {
@@ -2038,7 +2118,6 @@ sub _usage {
       The optional '-n' param prevents console output (usefull in plugins/scripts)
       The optional '-t' param sets the basic timeout (param globaltimeout in the base xml file, can be overriden per testcase)
       The optional '-r' param sets the report type 
-
       $0 --version|-v
 EOB
     exit 3;
@@ -2090,11 +2169,11 @@ discard - Boolean. Do not send in future requests and destroy upon the next cook
 
 =item parseresponse
 
-Parse a string from the HTTP response for use in subsequent requests. This is mostly used for passing Session ID's, but
+Parse a string from the HTTP response for use in subsequent requests. This is mostly used for passing Session ID's, but 
 can be applied to any case where you need to pass a dynamically generated value. It takes the arguments in the format
 "leftboundary|rightboundary", and an optional third argument "leftboundary|rightboundary|escape|decode" when you want
-to force escaping of all non-alphanumeric characters (in case there is a wrong configuration of Apache server it will
-push encoded HTML characters (&#47; = /,  &#58; = :,  ... ) to the Webinject and decode serve to translate them into normal characters.
+to force escaping of all non-alphanumeric characters (in case there is a wrong configuration of Apache server it will 
+push encoded HTML characters (&#47; = /,  &#58; = :,  ... ) to the Webinject and decode serve to translate them into normal characters. 
 See the "Session Handling and State Management - Parsing Response Data & Embedded Session ID's" section of this manual for details and examples on how to use this parameter.
 
 Note: You may need to prepend a backslash before certain reserved characters when parsing (sorry that is rather vague).
@@ -2114,7 +2193,7 @@ parseresponse4
 Additional parameter for response parsing.
 
 parseresponse5
-Additional parameter for response parsing.
+Additional parameter for response parsing. 
 
 =back
 
