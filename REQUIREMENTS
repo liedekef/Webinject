@@ -1,0 +1,4 @@
+Webinject needs:
+
+- on ubuntu: libcrypt-ssleay-perl libxml-simple-perl libwww-perl
+- on redhat-like: perl-Crypt-SSLeay perl-XML-Parser perl-XML-Simple perl-libwww-perl
