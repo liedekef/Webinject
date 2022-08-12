@@ -68,7 +68,7 @@ Creates an C<Webinject> object.
 
 =item reporttype
 
-possible values are 'standard', 'nagios', 'nagios2', 'mrtg' or 'external:'
+possible values are 'stdout', 'standard', 'nagios', 'nagios2', 'mrtg' or 'external:'
 
 =item nooutput
 
@@ -366,6 +366,12 @@ sub _run_test_case {
 	$useragent->default_header('Host' => $uri->host());
         $case->{url}=~s/\Q$host\E/$self->{'config'}->{'realserverip'}/mx;
     }
+
+    # if the url starts with "/", add the previous base url detected
+    if ($case->{url} =~ /^\//) {
+	$case->{url} = $self->{'parsedresult'}->{'previousbaseurl'} . $case->{url};
+    }
+
 
     if( $self->{'gui'} ) { $self->_gui_tc_descript($case); }
 
@@ -889,7 +895,6 @@ sub _write_result_xml_stdout {
         <max-response-time>$self->{'result'}->{'maxresponse'}</max-response-time>
         <min-response-time>$self->{'result'}->{'minresponse'}</min-response-time>
     </test-summary>
-
 </results>
 |;
     return;
@@ -1402,9 +1407,9 @@ sub _parseresponse {
     my ( $resptoparse, @parseargs );
     my ( $leftboundary, $rightboundary, $escape );
 
-    $self->{'parsedresult'}->{'previousurl'} = $response->base;
+    $self->{'parsedresult'}->{'previousurl'} = $response->request->uri_canonical;
     my($scheme, $authority, $path, $query, $fragment) =
-    $response->base =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|;
+    $response->request->uri_canonical =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|;
     $self->{'parsedresult'}->{'previousbaseurl'} = $scheme.'://'.$authority;
     $self->{'parsedresult'}->{'previoushost'} = $authority;
     $self->{'parsedresult'}->{'previousscheme'} = $scheme;
@@ -1744,8 +1749,28 @@ sub _httplog {
 
     # http response - log setting per test case
     if($case->{'logresponse'} && $case->{'logresponse'} =~ /yes/mxi ) {
-        $output .= "Target URL: ".$response->base."\n";
-        $output .= $response->as_string."\n\n";
+	my $last = $response;
+	my $redir_count = 0;
+	while ($last) {
+		if ($redir_count == 0) {
+			$output .= "Target URL: ".$last->request->uri_canonical."\n";
+			$output .= "Request\n";
+			$output .= $last->request->as_string."\n\n";
+			$output .= "Response:\n";
+			$output .= $last->as_string."\n\n";
+		} else {
+			$output .= "Redirected From URL: ".$last->request->uri_canonical."\n";
+			$output .= "Request\n";
+			$output .= $last->request->as_string."\n\n";
+			$output .= "Response:\n";
+			$output .= $last->as_string."\n\n";
+		}
+		$last = $last->previous( );
+		$redir_count++;
+	}
+	if ($response->redirects >0) {
+		$output .= "Redirected ".$response->redirects." times\n\n";
+	}
 	$response_logged = 1;
     }
 
@@ -1755,7 +1780,29 @@ sub _httplog {
 		$output .= $request->as_string."\n\n";
 	}
 	if (!$response_logged) {
-		$output .= $response->as_string."\n\n";
+		my $last = $response;
+		my $redir_count = 0;
+		while ($last) {
+			if ($redir_count == 0) {
+				$output .= "Target URL: ".$last->request->uri_canonical."\n";
+				$output .= "Request\n";
+				$output .= $last->request->as_string."\n\n";
+				$output .= "Response:\n";
+				$output .= $last->as_string."\n\n";
+			} else {
+				$output .= "Redirected From URL: ".$last->request->uri_canonical."\n";
+				$output .= "Request\n";
+				$output .= $last->request->as_string."\n\n";
+				$output .= "Response:\n";
+				$output .= $last->as_string."\n\n";
+			}
+			$last = $last->previous( );
+			$redir_count++;
+		}
+		if ($response->redirects >0) {
+			$output .= "Redirected ".$response->redirects." times\n\n";
+		}
+		$response_logged = 1;
 	}
     }
 
@@ -1766,7 +1813,29 @@ sub _httplog {
 		$output .= $request->as_string."\n\n";
 	}
 	if (!$response_logged) {
-		$output .= $response->as_string."\n\n";
+		my $last = $response;
+		my $redir_count = 0;
+		while ($last) {
+			if ($redir_count == 0) {
+				$output .= "Target URL: ".$last->request->uri_canonical."\n";
+				$output .= "Request\n";
+				$output .= $last->request->as_string."\n\n";
+				$output .= "Response:\n";
+				$output .= $last->as_string."\n\n";
+			} else {
+				$output .= "Redirected From URL: ".$last->request->uri_canonical."\n";
+				$output .= "Request\n";
+				$output .= $last->request->as_string."\n\n";
+				$output .= "Response:\n";
+				$output .= $last->as_string."\n\n";
+			}
+			$last = $last->previous( );
+			$redir_count++;
+		}
+		if ($response->redirects >0) {
+			$output .= "Redirected ".$response->redirects." times\n\n";
+		}
+		$response_logged = 1;
 	}
     }
 
@@ -1972,7 +2041,7 @@ sub _finaltasks {
         }
 
         else {
-            $self->_usage("ERROR: only 'nagios', 'nagios2', 'mrtg', 'external', or 'standard' are supported reporttype values");
+            $self->_usage("ERROR: only 'nagios', 'nagios2', 'mrtg', 'external:', 'standard' or 'stdout' are supported reporttype values");
         }
 
     }
@@ -2110,7 +2179,7 @@ sub _usage {
                 [-o|--output output_location]
                 [-n|--no-output]
                 [-t|--timeout]
-                [-r|--report-type standard|nagios|nagios2|mrtg|external:]
+                [-r|--report-type standard|stdout|nagios|nagios2|mrtg|external:]
                 [-s key=value]
                 [/path/to/testcase_file [XPath]]
 
